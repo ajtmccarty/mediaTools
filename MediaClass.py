@@ -22,7 +22,7 @@ class Media(object):
   @staticmethod
   def build_from_database():
     if not Media.db_interface:
-      Media.db_interface = DBInterface()
+      Media.db_interface = DBInterface.get_interface()
     columns = {k:None for k in Media.db_attrs_dict.keys()}
     results = Media.db_interface.get_from_table(MEDIA_TABLE_NAME,columns)
     if len(results) <= 1:
@@ -48,7 +48,7 @@ class Media(object):
   """
   def __init__(self, title="",year=0):
     if not self.db_interface:
-      self.db_interface = DBInterface()
+      self.db_interface = DBInterface.get_interface()
     self.id = None
     self.dirty = True
     if title:

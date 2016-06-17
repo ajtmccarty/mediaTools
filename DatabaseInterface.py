@@ -3,24 +3,33 @@ import psycopg2
 from config import DB_SETTINGS
 
 class DBInterface(object):
-  
+
   the_interface = None
   
   """
   CONSTRUCTOR
   Will only allow a single instance of DBInterface to exist
+  Returns an instance of DBInterface, creates one if it doesn't exist
+  """
+  @staticmethod
+  def get_interface():
+    if DBInterface.the_interface:
+      return DBInterface.the_interface
+    DBInterface.the_interface = DBInterface()
+    return DBInterface.the_interface
+  
+  """  
+  INIT
   Saves the connection settings from DB_SETTINGS in config.py
+  Sets connection and cursor to None
   """
   def __init__(self):
-    if self.the_interface:
-      self = self.the_interface
-    else:
-      self.the_connection = None
-      self.hostname = DB_SETTINGS["hostname"]
-      self.db_name = DB_SETTINGS["db_name"]
-      self.username = DB_SETTINGS["username"]
-      self.password = DB_SETTINGS["password"]
-      self.the_interface = self
+    self.the_connection = None
+    self.the_cursor = None
+    self.hostname = DB_SETTINGS["hostname"]
+    self.db_name = DB_SETTINGS["db_name"]
+    self.username = DB_SETTINGS["username"]
+    self.password = DB_SETTINGS["password"]
 
   """
   SUMMARY: attempts to establish connection to database defined in config.py
@@ -48,7 +57,9 @@ class DBInterface(object):
       print("Connection parameters: " + conn_string)
       raise e
     self.the_connection = connection
-
+    if not self.the_cursor or self.the_cursor.closed:
+      self.the_cursor = self.the_connection.cursor()
+    
   """
   SUMMARY: True if connected, False if not
   INPUT: None
@@ -59,6 +70,10 @@ class DBInterface(object):
       return False
     if self.the_connection.closed:
       return False
+    if not self.the_cursor:
+      return False
+    if self.the_cursor.closed:
+      return False
     return True
     
   """
@@ -67,6 +82,8 @@ class DBInterface(object):
   OUTPUT: None
   """
   def close_connection(self):
+    self.the_cursor.close()
+    self.the_cursor = None
     self.the_connection.close()
     self.the_connection = None
 
@@ -82,9 +99,9 @@ class DBInterface(object):
       query_string = """SELECT 1 
                         FROM information_schema.tables 
                         WHERE table_name=(%(tablename)s);"""
-      cursor.execute(query_string,{'tablename':tablename})
+      self.the_cursor.execute(query_string,{'tablename':tablename})
       #if the query returned anythign at all, then the table exists
-      if cursor.fetchone():
+      if self.the_cursor.fetchone():
         return True
       else:
         return False
@@ -127,16 +144,14 @@ class DBInterface(object):
     insert_string += ") RETURNING id;"
     #make sure connected to db
     self.connect()
-    cursor = self.the_connection.cursor()
     try:
-      cursor.execute(insert_string,value_dict)
+      self.the_cursor.execute(insert_string,value_dict)
     except psycopg2.Error as e:
       print("Error inserting row in DatabaseInterface.insert_row")
-      print("Query string: "+cursor.query)
+      print("Query string: "+self.the_cursor.query)
       raise e
-    the_id = cursor.fetchone()[0]
+    the_id = self.the_cursor.fetchone()[0]
     self.the_connection.commit()
-    cursor.close()
     return the_id
 
   """
@@ -156,16 +171,14 @@ class DBInterface(object):
     update_string += ", ".join(value_string_list)
     update_string += " WHERE id = %(id)s;"
     self.connect()
-    cursor = self.the_connection.cursor()
     try:
-      cursor.execute(update_string,value_dict)
+      self.the_cursor.execute(update_string,value_dict)
     except psycopg2.Error as e:
       print("Error updating in DatabaseInterface.update_row")
-      print("Query string: "+cursor.query)
+      print("Query string: "+self.the_cursor.query)
       raise e
     self.the_connection.commit()
-    cursor.close()
-    
+
   """
   SUMMARY: retrieve the given column_dict from the given table
   INPUT: tablename
@@ -205,17 +218,16 @@ class DBInterface(object):
       query_string += where_string
     query_string += ";"
     self.connect()
-    with self.the_connection.cursor() as cursor:
-      try:
-        cursor.execute(query_string,column_dict)
-      except psycopg2.Error as e:
-        print("Error in DatabaseInterface.get_from_table")
-        print("Query failed")
-        print("Attempted query: " + cursor.query)
-        raise e
-      results = cursor.fetchall()
-      results.insert(0,tuple(ordered_columns))
-      return results
+    try:
+      self.the_cursor.execute(query_string,column_dict)
+    except psycopg2.Error as e:
+      print("Error in DatabaseInterface.get_from_table")
+      print("Query failed")
+      print("Attempted query: " + self.the_cursor.query)
+      raise e
+    results = self.the_cursor.fetchall()
+    results.insert(0,tuple(ordered_columns))
+    return results
   
 if __name__ == "__main__":
   DB = DBInterface()
