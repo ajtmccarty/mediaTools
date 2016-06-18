@@ -1,4 +1,5 @@
 import config
+from os import listdir
 
 '''
 SUMMARY
@@ -22,6 +23,24 @@ def get_titles_from_file(titles_file=""):
   f.close()
   return raw_titles
 
+'''
+SUMMARY
+-------
+Read in a list of file names from a directory where each file or subdirectory
+is one film
+-------
+INPUT: optional path to directory, defaults to config.MOVIE_TITLES_FILE
+OUTPUT: list of strings stripped of white space
+'''
+def get_title_from_dir(dir_path=""):
+  if not dir_path:
+    dir_path = config.MOVIE_TITLES_FILE
+  try:
+    dirs = listdir(dir_path)
+  except OSError:
+    print("No such directory as %s" % dir_path)
+    return None
+  return [d.strip() for d in dirs]
 
 '''
 SUMMARY
