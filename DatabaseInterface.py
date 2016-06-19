@@ -38,30 +38,31 @@ class DBInterface(object):
   """
   def connect(self):
     #do nothing if the connection is already established
-    if self.is_connected():
+    if self.is_connected() and self.has_cursor():
       return
-    conn_string = ""
-    if self.hostname:
-      conn_string += "host=" + self.hostname + " "
-    if self.db_name:
-      conn_string += "dbname=" + self.db_name + " "
-    if self.username:
-      conn_string += "user=" + self.username + " "
-    if self.password:
-      conn_string += "password=" + self.password
-    try:
-      connection = psycopg2.connect(conn_string)
-    except psycopg2.Error as e:
-      print("Error in DatabaseInterface.connect")
-      print("Unable to connect to database with given connections string")
-      print("Connection parameters: " + conn_string)
-      raise e
-    self.the_connection = connection
-    if not self.the_cursor or self.the_cursor.closed:
+    if not self.is_connected():
+      conn_string = ""
+      if self.hostname:
+        conn_string += "host=" + self.hostname + " "
+      if self.db_name:
+        conn_string += "dbname=" + self.db_name + " "
+      if self.username:
+        conn_string += "user=" + self.username + " "
+      if self.password:
+        conn_string += "password=" + self.password
+      try:
+        connection = psycopg2.connect(conn_string)
+      except psycopg2.Error as e:
+        print("Error in DatabaseInterface.connect")
+        print("Unable to connect to database with given connections string")
+        print("Connection parameters: " + conn_string)
+        raise e
+      self.the_connection = connection
+    if not self.has_cursor():
       self.the_cursor = self.the_connection.cursor()
     
   """
-  SUMMARY: True if connected, False if not
+  SUMMARY: True if open connection, False if not
   INPUT: None
   OUTPUT: None
   """
@@ -70,6 +71,14 @@ class DBInterface(object):
       return False
     if self.the_connection.closed:
       return False
+    return True
+
+  """
+  SUMMARY: True if open cursor, False if not
+  INPUT: None
+  OUTPUT: None
+  """
+  def has_cursor(self):
     if not self.the_cursor:
       return False
     if self.the_cursor.closed:
