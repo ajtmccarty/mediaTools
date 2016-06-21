@@ -1,4 +1,5 @@
 from inspect import getmembers
+from DatabaseInterface import DBInterface
 
 class ModelBase(object):
   """
@@ -25,6 +26,32 @@ class ModelBase(object):
     
     the_class_instance = TheClass.create()
   """
+  #holds the one database connection for all models
+  db_interface = DBInterface.get_interface()
+  #dict to track all model instances
+  #key is the class and value is a list of all instances
+  all_models = {}
+  
+  @classmethod
+  def get_all_models(cls):
+    """
+    returns a list of all instances of a given model class
+    instances are tracked in ModelBase.all_models
+    """
+    if not ModelBase.all_models.has_key(cls):
+      return []
+    return ModelBase.all_models[cls][:]
+    
+  @classmethod
+  def track_model(cls,model):
+    """
+    adds an instance of a model to the tracking dictionary, ModelBase.all_models
+    """
+    if ModelBase.all_models.has_key(cls):
+      ModelBase.all_models[cls].append(model)
+    else:
+      ModelBase.all_models[cls] = [model]
+  
   @classmethod
   def create(cls):
     """
@@ -33,9 +60,11 @@ class ModelBase(object):
     class from which it is called
     """
     m = cls()
-    m.__dict__ = {'id':None}
+    m.__dict__['id'] = None
+    m.__dict__['_is_dirty'] = True
     for attr in cls.get_super_attrs():
       m.__dict__[attr] = getattr(cls,attr)[0]
+    cls.track_model(m)
     return m
   
   @classmethod
@@ -74,8 +103,9 @@ class ModelBase(object):
       tuple if it exists
     prints error messages if it encounters an issue
     """
+    #don't allow direct manipulation of __dict__
     if name == "__dict__":
-      return
+      return True
     if not self.__dict__.has_key(name):
       print("WARNING in ModelBase.__setattr__")
       print("\tNo attr '%s' in this model" % name)
