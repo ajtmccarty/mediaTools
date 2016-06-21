@@ -1,5 +1,6 @@
 from inspect import getmembers
 from DatabaseInterface import DBInterface
+from config import TYPE_MAPPING
 
 class ModelBase(object):
   """
@@ -63,6 +64,10 @@ class ModelBase(object):
     initializes the __dict__ attribute using the specification tuple from the 
     class from which it is called
     """
+    result = cls.check_model()
+    if result != True:
+      print(result)
+      return None
     m = ModelBase()
     m.__dict__['attrs'] = {'id':None}
     m.__dict__['status'] = {'_is_dirty':True}
@@ -72,6 +77,44 @@ class ModelBase(object):
     cls.track_model(m)
     m.set_tablename()
     return m
+  
+  @classmethod
+  def check_model(cls):
+    this_func_name = "ModelBase.check_model"
+    if ModelBase.model_data.has_key(cls) and  \
+       ModelBase.model_data[cls].has_key("has_been_checked") and \
+       ModelBase.model_data[cls]["has_been_checked"] == True:
+        return True
+    for attr in cls.get_super_attrs():
+      spec_tuple = getattr(cls,attr)
+      if type(spec_tuple[0]) not in TYPE_MAPPING.keys():
+        #error message 0
+        return error_message(this_func_name,0,(cls,spec_tuple[0],type(spec_tuple[0])))
+      if spec_tuple[1] not in TYPE_MAPPING.keys():
+        #error message 1
+        return error_message(this_func_name,1,(cls,spec_tuple[1]))
+      sql_types = []
+      for val in TYPE_MAPPING.values():
+        if isinstance(val,list):
+          sql_types += val
+        else:
+          sql_types.append(val)
+      if spec_tuple[2] not in sql_types:
+        #error message 2
+        return error_message(this_func_name,2,(cls,spec_tuple[2]))
+      if len(spec_tuple) > 3:
+        if not hasattr(spec_tuple[3],'__call__'):
+          #error message 3
+          return error_message(this_func_name,3,(cls,spec_tuple[3]))
+      if spec_tuple[0] != None:
+        if type(spec_tuple[0]) != spec_tuple[1]:
+          #error message 4
+          return error_message(this_func_name,4,(cls,spec_tuple[0],spec_tuple[1]))
+    if not ModelBase.model_data.has_key(cls): 
+      ModelBase.model_data[cls] = {}
+    if not ModelBase.model_data[cls].has_key("has_been_checked"): 
+      ModelBase.model_data[cls]["has_been_checked"] = True
+    return True
   
   @classmethod
   def get_super_attrs(cls):
@@ -136,15 +179,15 @@ class ModelBase(object):
     prints error messages if it encounters an issue
     """
     #don't allow direct setting of __dict__
+    this_func_name = "ModelBase.__setattr__"
     if name == "__dict__":
       return
     if self.__dict__['status'].has_key(name):
       self.__dict__['status'][name] = value
       return None
     if not self.__dict__['attrs'].has_key(name):
-      print("WARNING in ModelBase.__setattr__")
-      print("\tNo attr '%s' in this model" % name)
-      print("\tSuperclass: %s" % self.superclass)
+      #error message 5
+      print(error_message(this_func_name,5,(name,self.child_class)))
       return None
     #TYPE VALIDATION
     specification = getattr(self.child_class,name)
@@ -153,9 +196,8 @@ class ModelBase(object):
       try:
         value = correct_type(value)
       except:
-        print("ERROR in ModelBase.__setattr__")
-        print("\tvalue '%s' is of wrong type and cannot be cast as '%s'" % (value,correct_type))
-        print("\tclass: %s" % self.child_class)
+        #error message 6
+        print(error_message(this_func_name,6,(value,correct_type,self.child_class)))
         return None
     if len(specification) <= 3:
       #set the value if there is not custom validation
@@ -167,11 +209,34 @@ class ModelBase(object):
     if result == True:
       self.__dict__['attrs'][name] = value
     else:
-        print("ERROR in ModelBase.__setattr__")
-        print("\tvalue '%s' failed custom validation in '%s'" % (value,validator))
-        print("\terror message: " + result)
-        print("\tclass: %s" % self.child_class)
+        #error message 7
+        print(error_message(this_func_name,7,(value,validator,result,self.child_class)))
         return None
+
+def error_message(caller,err_num,tup):
+  err_dict = {}
+  err_dict[0] =  ["Class: %s has a default value of %s with type %s", \
+                  "Supported default value types are the keys in config.TYPE_MAPPING"]
+  err_dict[1] = ["Class: %s has a Python type of %s, which is not supported", \
+                 "Supported Python types are the keys in config.TYPE_MAPPING"]
+  err_dict[2] = ["Class: %s has an SQL type of %s, which is not supported", \
+                 "Supported SQL types are the values in config.TYPE_MAPPING"]
+  err_dict[3] = ["Class: %s has validator %s, which is not a function", \
+                 "Item 4 must a function that takes one arg and returns a boolean"]
+  err_dict[4] = ["Class: %s has has default value %s, which is not of Python type %s", \
+                 "The default value must be None or the Python type in item 2"]
+  err_dict[5] = ["No attr '%s' in this model",\
+                 "Class: %s"]
+  err_dict[6] = ["Value '%s' is of wrong type and cannot be cast as '%s'",\
+                 "Class: %s"]
+  err_dict[7] = ["Value '%s' failed custom validation in '%s'", \
+                 "Error message from validator: %s", \
+                 "Class: %s"]
+  final_message = "ERROR in " + caller + "\n"
+  for line in err_dict[err_num]:
+    final_message += "\t" + line + "\n"
+  return final_message % tup
+
 
 ### NOTES ###
 #class-wide database connection
@@ -194,16 +259,33 @@ class ModelBase(object):
 
 
 ### EVERYTHING BELOW THIS LINE IS FOR TESTING ###
-def year_validator(year):
-  if year < 1870:
-    return "Year must be greater than 1869"
-  return True
-
-class RealClass(ModelBase):
-  title = (None,str,"varchar")
-  year = (None,int,"integer",year_validator)
-
 if __name__ == "__main__":
+  def year_validator(year):
+    if year < 1870:
+      return "Year must be greater than 1869"
+    return True
+  
+  class RealClass(ModelBase):
+    title = (None,str,"varchar")
+    year = (None,int,"integer",year_validator)
+  
+  class GoodModel(ModelBase):
+    valid_attr = ("valid",str,"varchar")
+    valid_attr2 = (True,bool,"bool")
+    valid_attr3 = (17,int,"smallint",lambda x:x>10)
+  
+  class BadModel1(ModelBase):
+    invalid_attr = (type,str,"varchar")
+    
+  class BadModel2(ModelBase):
+    invalid_attr2 = (None,17,"text")
+  
+  class BadModel3(ModelBase):
+    invalid_attr3 = (None,str,"NOTSQL")
+  
+  class BadModel4(ModelBase):
+    invalid_attr4 = (17,str,"integer")
+
   m1 = RealClass.create()
   m2 = RealClass.create()
   m1.title = "Back to the Future"
@@ -221,3 +303,8 @@ if __name__ == "__main__":
   assert (m1._is_dirty)
   assert (m2._is_dirty)
   assert (m1.get_tablename() == "realclass_table")
+  assert (GoodModel.check_model() == True)
+  assert (BadModel1.create() == None)
+  assert (BadModel2.create() == None)
+  assert (BadModel3.create() == None)
+  assert (BadModel4.create() == None)
