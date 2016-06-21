@@ -1,6 +1,5 @@
 from inspect import getmembers
 from DatabaseInterface import DBInterface
-import config
 
 class ModelBase(object):
   """
@@ -33,6 +32,9 @@ class ModelBase(object):
   #dict to track all model instances
   #key is the class and value is a list of all instances
   all_models = {}
+  
+  #holds model-specific information
+  model_data = {}
   
   @classmethod
   def get_all_models(cls):
@@ -68,6 +70,7 @@ class ModelBase(object):
     for attr in cls.get_super_attrs():
       m.__dict__['attrs'][attr] = getattr(cls,attr)[0]
     cls.track_model(m)
+    m.set_tablename()
     return m
   
   @classmethod
@@ -91,9 +94,25 @@ class ModelBase(object):
       super_attrs.append(attr)
     return super_attrs
 
-  def get_tablename(self):
+  def set_tablename(self):
+    """
+    creates the tablename and saves it into the ModelBase.model_data dict at 
+    model_data['tablename']
+    the tablename is just the all lowercase classname with '_table' appended
+    """
     the_class = self.child_class
-    return the_class.__name__.lower() + "_table"
+    if not ModelBase.model_data.has_key(the_class):
+      ModelBase.model_data[the_class] = {}
+    if not ModelBase.model_data[the_class].has_key("tablename"):
+      the_name = the_class.__name__.lower() + "_table"
+      ModelBase.model_data[the_class]["tablename"] = the_name
+    
+    
+  def get_tablename(self):
+    """
+    retrieves the tablename from ModelBase.model_data["tablename"]
+    """
+    return ModelBase.model_data[self.child_class]['tablename']
     
   def __getattr__(self,attr):
     """
@@ -201,4 +220,4 @@ if __name__ == "__main__":
   assert (m2.year == 2000)
   assert (m1._is_dirty)
   assert (m2._is_dirty)
-  assert (m1.tablename == "realclass_table")
+  assert (m1.get_tablename() == "realclass_table")
