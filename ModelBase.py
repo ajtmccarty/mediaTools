@@ -1,5 +1,6 @@
 from inspect import getmembers
 from DatabaseInterface import DBInterface
+import config
 
 class ModelBase(object):
   """
@@ -28,6 +29,7 @@ class ModelBase(object):
   """
   #holds the one database connection for all models
   db_interface = DBInterface.get_interface()
+  
   #dict to track all model instances
   #key is the class and value is a list of all instances
   all_models = {}
@@ -59,11 +61,12 @@ class ModelBase(object):
     initializes the __dict__ attribute using the specification tuple from the 
     class from which it is called
     """
-    m = cls()
-    m.__dict__['id'] = None
-    m.__dict__['_is_dirty'] = True
+    m = ModelBase()
+    m.__dict__['attrs'] = {'id':None}
+    m.__dict__['status'] = {'_is_dirty':True}
+    m.__dict__['status']['child_class'] = cls
     for attr in cls.get_super_attrs():
-      m.__dict__[attr] = getattr(cls,attr)[0]
+      m.__dict__['attrs'][attr] = getattr(cls,attr)[0]
     cls.track_model(m)
     return m
   
@@ -88,11 +91,21 @@ class ModelBase(object):
       super_attrs.append(attr)
     return super_attrs
 
+  def get_tablename(self):
+    the_class = self.child_class
+    return the_class.__name__.lower() + "_table"
+    
   def __getattr__(self,attr):
     """
     overrides base __getattr__ functionality to use __dict__
     """
-    return self.__dict__.get(attr)
+    if attr.lower() == 'tablename':
+      return self.get_tablename()
+    if self.__dict__['status'].has_key(attr):
+      return self.__dict__['status'].get(attr)
+    if self.__dict__['attrs'].has_key(attr):
+      return self.__dict__['attrs'].get(attr)
+    return None
 
   def __setattr__(self,name,value):
     """
@@ -103,16 +116,19 @@ class ModelBase(object):
       tuple if it exists
     prints error messages if it encounters an issue
     """
-    #don't allow direct manipulation of __dict__
+    #don't allow direct setting of __dict__
     if name == "__dict__":
-      return True
-    if not self.__dict__.has_key(name):
+      return
+    if self.__dict__['status'].has_key(name):
+      self.__dict__['status'][name] = value
+      return None
+    if not self.__dict__['attrs'].has_key(name):
       print("WARNING in ModelBase.__setattr__")
       print("\tNo attr '%s' in this model" % name)
       print("\tSuperclass: %s" % self.superclass)
       return None
     #TYPE VALIDATION
-    specification = getattr(self.__class__,name)
+    specification = getattr(self.child_class,name)
     correct_type = specification[1]
     if not isinstance(value,correct_type):
       try:
@@ -120,20 +136,23 @@ class ModelBase(object):
       except:
         print("ERROR in ModelBase.__setattr__")
         print("\tvalue '%s' is of wrong type and cannot be cast as '%s'" % (value,correct_type))
-        print("\tclass: %s" % self.__class__)
+        print("\tclass: %s" % self.child_class)
         return None
+    if len(specification) <= 3:
+      #set the value if there is not custom validation
+      self.__dict__['attrs'][name] = value
+      return None
     #CUSTOM VALIDATION
-    if len(specification) > 3: 
-      validator = specification[3]
-      result = validator(value)
-      if result == True:
-        self.__dict__[name] = value
-      else:
-          print("ERROR in ModelBase.__setattr__")
-          print("\tvalue '%s' failed custom validation in '%s'" % (value,validator))
-          print("\terror message: " + result)
-          print("\tclass: %s" % self.__class__)
-          return None
+    validator = specification[3]
+    result = validator(value)
+    if result == True:
+      self.__dict__['attrs'][name] = value
+    else:
+        print("ERROR in ModelBase.__setattr__")
+        print("\tvalue '%s' failed custom validation in '%s'" % (value,validator))
+        print("\terror message: " + result)
+        print("\tclass: %s" % self.child_class)
+        return None
 
 ### NOTES ###
 #class-wide database connection
@@ -166,11 +185,20 @@ class RealClass(ModelBase):
   year = (None,int,"integer",year_validator)
 
 if __name__ == "__main__":
-  the_model = RealClass.create()
-  print the_model.title
-  print the_model.year
-  the_model.title = "Back to the Future"
-  the_model.year = "1850"
-  the_model.fake = 17
-  print the_model.title
-  print the_model.year
+  m1 = RealClass.create()
+  m2 = RealClass.create()
+  m1.title = "Back to the Future"
+  m1.year = "1850"
+  m1.fake = 17
+  assert (m1.title == "Back to the Future")
+  assert (m1.year == None)
+  assert (m1.fake == None)
+  assert (m1 != m2)
+  assert (m1.db_interface == m2.db_interface)
+  assert (m1 in RealClass.get_all_models())
+  assert (m2 in RealClass.get_all_models())
+  m2.year = "2000"
+  assert (m2.year == 2000)
+  assert (m1._is_dirty)
+  assert (m2._is_dirty)
+  assert (m1.tablename == "realclass_table")
