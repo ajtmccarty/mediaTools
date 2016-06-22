@@ -104,16 +104,32 @@ class DBInterface(object):
   def does_table_exist(self,tablename):
     #make sure the connection is established
     self.connect()
-    with self.the_connection.cursor() as cursor:
-      query_string = """SELECT 1 
-                        FROM information_schema.tables 
-                        WHERE table_name=(%(tablename)s);"""
-      self.the_cursor.execute(query_string,{'tablename':tablename})
-      #if the query returned anythign at all, then the table exists
-      if self.the_cursor.fetchone():
-        return True
-      else:
-        return False
+    query_string = """SELECT 1 
+                      FROM information_schema.tables 
+                      WHERE table_name=(%(tablename)s);"""
+    self.the_cursor.execute(query_string,{'tablename':tablename})
+    #if the query returned anythign at all, then the table exists
+    if self.the_cursor.fetchone():
+      return True
+    else:
+      return False
+
+  def create_table(self,tablename,col_dict):
+    """
+    create a table with the given name and columns
+    col_dict is of the form col_dict[column_name] = sql_type
+    where sql_type is a string
+    """
+    creation_string = "CREATE TABLE " + tablename + " ("
+    col_list = [name+" "+sql_type for (name,sql_type) in col_dict.iteritems()]
+    creation_string += ", ".join(col_list) + ");"
+    self.connect()
+    try:
+      self.the_cursor.execute(creation_string)
+    except psycopg2.Error as e:
+      print("ERROR in DBInterface.create_table")
+      raise e
+    self.the_connection.commit()
 
   """
   SUMMARY: inserts or updates a row in the given table as appropriate
@@ -215,7 +231,7 @@ class DBInterface(object):
     where_list = []
     for col in ordered_columns:
       val = column_dict.get(col,None)
-      #if this key does not have a value, remove it so that 
+      #if this key does not have a value, it shouldn't be in the where clause 
       if not val:
         continue
       if not has_values:
@@ -247,6 +263,6 @@ if __name__ == "__main__":
   print(DB.does_table_exist('test'))
   print("Does 'fake_table' exist?")
   print(DB.does_table_exist('fake_table'))
-  q_dict = {"id":None,"title":"Tango and Cash","year":None}
-  print DB.get_from_table("test",q_dict)
+  DB.create_table('test_table',{'id':'serial PRIMARY KEY','item1':'varchar','item2':'smallint'})
+  assert (DB.does_table_exist('test_table'))
   DB.close_connection()
