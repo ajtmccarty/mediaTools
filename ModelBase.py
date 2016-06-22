@@ -8,7 +8,6 @@ class ModelBase(object):
   
   All other models should be based on this class
   
-  Creates an 'id' value and initializes it to None
   Models can set their own instance variables by declaring them as class
     variables and setting a specification tuple like so
     
@@ -26,6 +25,13 @@ class ModelBase(object):
   Instances should only be created using the "create" method of the model, such as
     
     the_class_instance = TheClass.create()
+    
+  __dict__ structure
+    ['status'] - data not needed in the database`
+      ['_is_dirty'] - if the model has been updated since its last save
+    ['attrs'] - data NEEDED in the database
+      ['id'] - the primary key of the model in the database
+      columns defined in the child class
   """
   #holds the one database connection for all models
   db_interface = DBInterface.get_interface()
@@ -34,7 +40,17 @@ class ModelBase(object):
   #key is the class and value is a list of all instances
   all_models = {}
   
-  #holds model-specific information
+  
+  """
+  holds model-specific information
+  format
+  [classname] - the name of the class that inherits from ModelBase
+    ['tablename'] - stores the name of the table used in the database
+    ['table_exists'] - stores True once the database has checked for the table
+                       and found it
+    ['has_been_checked'] - stores True if the model has successfully passed the 
+                           tests in ModelBase.check_model
+  """
   model_data = {}
   
   @classmethod
@@ -69,9 +85,9 @@ class ModelBase(object):
       print(result)
       return None
     m = ModelBase()
-    m.__dict__['attrs'] = {'id':None}
     m.__dict__['status'] = {'_is_dirty':True}
     m.__dict__['status']['child_class'] = cls
+    m.__dict__['attrs'] = {}
     for attr in cls.get_super_attrs():
       m.__dict__['attrs'][attr] = getattr(cls,attr)[0]
     cls.track_model(m)
@@ -80,6 +96,9 @@ class ModelBase(object):
   
   @classmethod
   def check_model(cls):
+    """
+    checks the format of the specification tuples in the child class definition
+    """
     this_func_name = "ModelBase.check_model"
     if ModelBase.model_data.has_key(cls) and  \
        ModelBase.model_data[cls].has_key("has_been_checked") and \
@@ -96,10 +115,11 @@ class ModelBase(object):
       sql_types = []
       for val in TYPE_MAPPING.values():
         if isinstance(val,list):
-          sql_types += val
+          sql_types += [v.lower() for v in val] 
         else:
-          sql_types.append(val)
-      if spec_tuple[2] not in sql_types:
+          sql_types.append(val.lower())
+      sql_types.append("serial primary key")
+      if spec_tuple[2].lower() not in sql_types:
         #error message 2
         return error_message(this_func_name,2,(cls,spec_tuple[2]))
       if len(spec_tuple) > 3:
@@ -110,7 +130,7 @@ class ModelBase(object):
         if type(spec_tuple[0]) != spec_tuple[1]:
           #error message 4
           return error_message(this_func_name,4,(cls,spec_tuple[0],spec_tuple[1]))
-    if not ModelBase.model_data.has_key(cls): 
+    if not ModelBase.model_data.has_key(cls):
       ModelBase.model_data[cls] = {}
     if not ModelBase.model_data[cls].has_key("has_been_checked"): 
       ModelBase.model_data[cls]["has_been_checked"] = True
@@ -150,7 +170,6 @@ class ModelBase(object):
       the_name = the_class.__name__.lower() + "_table"
       ModelBase.model_data[the_class]["tablename"] = the_name
     
-    
   def get_tablename(self):
     """
     retrieves the tablename from ModelBase.model_data["tablename"]
@@ -168,6 +187,13 @@ class ModelBase(object):
     if self.__dict__['attrs'].has_key(attr):
       return self.__dict__['attrs'].get(attr)
     return None
+
+  def get_columns(self):
+    """
+    returns self.__dict__['attrs'] which contains the data that the database
+    cares about
+    """
+    return self.__dict__['attrs'].copy()
 
   def __setattr__(self,name,value):
     """
@@ -212,11 +238,45 @@ class ModelBase(object):
         #error message 7
         print(error_message(this_func_name,7,(value,validator,result,self.child_class)))
         return None
+    #if we make it all the way to the end, the value has been set and the object
+    #is now different from that in the database
+    self.__dict__['status']['_is_dirty'] = True
+    
+  def verify_table_exists(self):
+    """
+    check if the table for this model exists in the database and create it
+    if necessary
+    once it exists, set the model_data[class]['table_exists'] flag to True
+    """
+    if ModelBase.model_data[self.child_class].get('table_exists'): return True
+    if ModelBase.db_interface.does_table_exist(self.get_tablename()):
+      ModelBase.model_data[self.child_class]['table_exists'] = True
+      return True
+    col_dict = {}
+    for col in self.get_columns():
+      col_dict[col] = getattr(self.child_class,col)[2]
+    ModelBase.db_interface.create_table(self.get_tablename(),col_dict)
+    ModelBase.model_data[self.child_class]['table_exists'] = True
+    return True
+  
+  def save(self):
+    """
+    save the model to the database
+    if it's the first save, record the returned ID
+    set _is_dirty to False
+    """
+    self.verify_table_exists()
+    if not self.id:
+      self.id = ModelBase.db_interface.save_to_table(self.tablename,self.get_columns())
+    elif self._is_dirty:
+      ModelBase.db_interface.save_to_table(self.tablename,self.get_columns())
+    self._is_dirty = False
+
 
 def error_message(caller,err_num,tup):
   err_dict = {}
-  err_dict[0] =  ["Class: %s has a default value of %s with type %s", \
-                  "Supported default value types are the keys in config.TYPE_MAPPING"]
+  err_dict[0] = ["Class: %s has a default value of %s with type %s", \
+                 "Supported default value types are the keys in config.TYPE_MAPPING"]
   err_dict[1] = ["Class: %s has a Python type of %s, which is not supported", \
                  "Supported Python types are the keys in config.TYPE_MAPPING"]
   err_dict[2] = ["Class: %s has an SQL type of %s, which is not supported", \
@@ -259,15 +319,18 @@ def error_message(caller,err_num,tup):
 
 
 ### EVERYTHING BELOW THIS LINE IS FOR TESTING ###
+def year_validator(year):
+  if year < 1870:
+    return "Year must be greater than 1869"
+  return True
+
+class RealClass(ModelBase):
+  id = (None,int,"serial PRIMARY KEY")
+  title = (None,str,"varchar")
+  year = (None,int,"integer",year_validator)
+
+
 if __name__ == "__main__":
-  def year_validator(year):
-    if year < 1870:
-      return "Year must be greater than 1869"
-    return True
-  
-  class RealClass(ModelBase):
-    title = (None,str,"varchar")
-    year = (None,int,"integer",year_validator)
   
   class GoodModel(ModelBase):
     valid_attr = ("valid",str,"varchar")
@@ -308,3 +371,5 @@ if __name__ == "__main__":
   assert (BadModel2.create() == None)
   assert (BadModel3.create() == None)
   assert (BadModel4.create() == None)
+  m1.save()
+  assert (m1.id != None)
