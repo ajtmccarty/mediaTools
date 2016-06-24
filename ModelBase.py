@@ -2,6 +2,7 @@ from inspect import getmembers
 from DatabaseInterface import DBInterface
 from config import TYPE_MAPPING
 
+
 class ModelBase(object):
   """
   The Base Model class
@@ -40,7 +41,6 @@ class ModelBase(object):
   #key is the class and value is a list of all instances
   all_models = {}
   
-  
   """
   holds model-specific information
   format
@@ -52,7 +52,8 @@ class ModelBase(object):
                            tests in ModelBase.check_model
   """
   model_data = {}
-  
+
+
   @classmethod
   def get_all_models(cls):
     """
@@ -61,6 +62,8 @@ class ModelBase(object):
     """
     if not ModelBase.all_models.has_key(cls):
       return []
+    #return a copy of the list so that the actual list cannot be altered 
+    #by the caller
     return ModelBase.all_models[cls][:]
     
   @classmethod
@@ -68,11 +71,11 @@ class ModelBase(object):
     """
     adds an instance of a model to the tracking dictionary, ModelBase.all_models
     """
-    if ModelBase.all_models.has_key(cls):
-      ModelBase.all_models[cls].append(model)
-    else:
+    if not ModelBase.all_models.has_key(cls):
       ModelBase.all_models[cls] = [model]
-  
+      return
+    ModelBase.all_models[cls].append(model)
+
   @classmethod
   def create(cls):
     """
@@ -298,40 +301,21 @@ def error_message(caller,err_num,tup):
   return final_message % tup
 
 
-### NOTES ###
-#class-wide database connection
-#id
-#isDirty
-#attrs/columns
-#   name
-#   python data type
-#   SQL data type
-#   default value
-#tablename
-#SQL table
-#   check existence
-#   create table
-#   update table with new or removed attributes
-#   reset table
-#   save
-#   retrieve
-
-
-
 ### EVERYTHING BELOW THIS LINE IS FOR TESTING ###
-def year_validator(year):
-  if year < 1870:
-    return "Year must be greater than 1869"
-  return True
-
-class RealClass(ModelBase):
-  id = (None,int,"serial PRIMARY KEY")
-  title = (None,str,"varchar")
-  year = (None,int,"integer",year_validator)
-
-
 if __name__ == "__main__":
+  from random import randint
   
+  def year_validator(year):
+    if year < 1870:
+      return "Year must be greater than 1869"
+    return True
+  
+  class RealClass(ModelBase):
+    id = (None,int,"serial PRIMARY KEY")
+    title = (None,str,"varchar")
+    year = (None,int,"integer",year_validator)
+  
+
   class GoodModel(ModelBase):
     valid_attr = ("valid",str,"varchar")
     valid_attr2 = (True,bool,"bool")
