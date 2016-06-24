@@ -32,7 +32,7 @@ is one film
 INPUT: optional path to directory, defaults to config.MOVIE_TITLES_FILE
 OUTPUT: list of strings stripped of white space
 '''
-def get_title_from_dir(dir_path=""):
+def get_titles_from_dir(dir_path=""):
   if not dir_path:
     dir_path = config.MOVIE_TITLES_FILE
   try:
