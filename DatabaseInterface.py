@@ -207,9 +207,11 @@ class DBInterface(object):
   """
   SUMMARY: retrieve the given column_dict from the given table
   INPUT: tablename
-         column_dict, dict of column_dict to retrieve
+         column_dict, dict of columns to retrieve
             each key is a column for the SELECT clause
             values (optional) are used in the WHERE clause
+              values must define the comparison operator as key and value will
+              be appended with a space to the WHERE clause directly
 
   OUTPUT: list of tuples containing the input columns
           first tuple is a list of the columns to give the ordering
@@ -239,12 +241,12 @@ class DBInterface(object):
       where_list.append(col)
     if has_values:
       where_string = " WHERE "
-      where_string += ", ".join([col + " = %(" + col + ")s" for col in where_list])
+      where_string += ", ".join([col+" "+column_dict[col] for col in where_list])
       query_string += where_string
     query_string += ";"
     self.connect()
     try:
-      self.the_cursor.execute(query_string,column_dict)
+      self.the_cursor.execute(query_string)
     except psycopg2.Error as e:
       print("Error in DatabaseInterface.get_from_table")
       print("Query failed")
